@@ -7,6 +7,9 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author Xuanchi Guo
@@ -24,12 +27,33 @@ public class QQServerConnectClientThread extends Thread{
     }
 
     @Override
-    public void run() { // keep the thread alive, because it is used to listen to the client for new messages
+    public void run() {
+        // check if there are offline messages for the user
+        List<Message> messages = QQserver.getOfflineMessages().get(username);
+
+        try {
+            if (messages != null) {
+                System.out.println("There are offline messages for user " + username);
+                for (Message message : messages) {
+                    // create an output stream every time
+                    // because the stream will be closed after the message is sent
+                    ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+                    oos.writeObject(message); // send the message object to the client
+                }
+                ConcurrentHashMap<String, List<Message>> offlineMessages = QQserver.getOfflineMessages();
+                offlineMessages.remove(username); // remove the offline messages for the user
+                QQserver.setOfflineMessages(offlineMessages);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        // keep the thread alive, because it is used to listen to the client for new messages
         while(true) {
             try {
                 System.out.println("Server thread is listening to the client "+ username +"...");
                 ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
-                Message message =(Message) ois.readObject();// read the message object from the client
+                Message message =(Message) ois.readObject();// read the message object from the client, this is a blocking method call
 
                 switch (message.getMessageType()) {
                     case MessageType.message_get_onLineFriend -> {
@@ -82,6 +106,22 @@ public class QQServerConnectClientThread extends Thread{
                             QQserver.addOfflineMessage(message.getReceiver(), message);
                         }
                     }
+//                    case MessageType.message_offline_message -> {
+//                        System.out.println("User " + username + " is requesting the offline messages");
+//                        // check if there are offline messages for the user
+//                        List<Message> messages = QQserver.getOfflineMessages().get(username);
+//                        if (messages != null) {
+//                            ObjectOutputStream oos = new ObjectOutputStream(ManagerServerConnectClientThread.getQQServerConnectClientThread(username).getSocket().getOutputStream());
+//                            System.out.println("There are offline messages for user " + username);
+//                            for (Message m : messages) {
+////                                message.setContent(m.getSender() + " said to you: " + m.getContent());
+//                                oos.writeObject(m); // send the message object to the client
+//                            }
+//                            ConcurrentHashMap<String, List<Message>> temp_hm = QQserver.getOfflineMessages();
+//                            temp_hm.remove(username);
+//                            QQserver.setOfflineMessages(temp_hm); // remove the offline messages from the offline messages list
+//                        }
+//                    }
                 }
             } catch (IOException | ClassNotFoundException e) {
                 throw new RuntimeException(e);
